@@ -1,0 +1,8 @@
+Final Project Idea – Transplant Outcomes
+
+My project will analyze survival outcomes in heart transplant patients. The primary research question is whether receiving a heart transplant improves survival compared to not receiving one. This question reflects broader transplant disparities research, where later I may extend the idea to rural vs. urban comparisons using larger national registries.
+
+For now, I will use the Stanford heart transplant dataset from the survival package in R. This dataset contains 172 patients followed at Stanford between 1967 and 1974, with variables such as age, prior surgery, whether they received a transplant, and time to death or censoring. 
+
+Using this dataset, I can demonstrate survival analysis with Kaplan–Meier curves and Cox proportional hazards models. In the future, I will request national registry data (OPTN/SRTR) for a more recent and generalizable analysis.
+
