@@ -1,0 +1,12 @@
+1. Are any of you predicted response values from your best model scientifically meaningless? Explain.
+Yes, there are some values that are scientifically meaningless. The best model, #4, uses linear relationships. This allows some of the predictions for the mushroom growth to be a negative value. Obviously, these results do not make sense because mushrooms cannot grow smaller. Therefore these values are meaningless for any interpretation.
+
+2. In your plots, did you find any non-linear relationships? Provide one resource that explains how to model non-linear relationships in R.
+Yes, the plots for both growthrate vs. light and growthrate vs. nitrogen show some curvature in their trend line. This means that the gorwth is not increasing at a constant rate throughout the predictions. This means that a linear model will not be able to acccurately capture the true response of the mushrooms to different conditions. 
+I found this source that walks through some steps to plotting htese non-linear relationships: https://statisticsbyjim.com/glossary/polynomial-regression/
+
+3. Write the code you would use to model that data found in "/Data/non_linear_relationship.csv" with a linear model.
+df <- read_csv("Data/non_linear_relationship.csv")
+df <- df %>% mutate(X2 = X^2)
+mod_poly <- lm(Y ~ X + X2, data = df)
+summary(mod_poly)
