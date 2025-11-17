@@ -1,0 +1,166 @@
+---
+title: "Assignment 9"
+author: "Jacob Wallin"
+date: "2025-11-17"
+output: html_document
+---
+
+## Setup
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE
+)
+
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(janitor)
+library(broom)
+
+if (!dir.exists("figs")) dir.create("figs")
+```
+
+## Load and inspect data
+
+```{r load-data}
+admissions_raw <- read_csv("GradSchool_Admissions.csv")
+
+admissions <- admissions_raw |>
+  clean_names() |>
+  mutate(
+    admit = factor(admit, levels = c(0, 1),
+                   labels = c("rejected", "admitted")),
+    rank  = factor(rank,
+                   levels = sort(unique(rank)),
+                   labels = paste("Rank", sort(unique(rank))))
+  )
+
+glimpse(admissions)
+summary(admissions)
+```
+
+## Data analysis
+
+```{r summaries}
+# Admission counts
+admissions |>
+  count(admit)
+
+# Admission proportion by rank
+admissions |>
+  count(rank, admit) |>
+  group_by(rank) |>
+  mutate(prop = n / sum(n))
+```
+
+### Summaries
+
+From the quick summary, most people in this dataset didn’t get in. Also, the school rank already looks like it might matter. The higher-ranked schools seem to have better acceptance numbers.
+
+```{r histograms, fig.width=7, fig.height=4}
+# GRE distribution
+ggplot(admissions, aes(x = gre)) +
+  geom_histogram(bins = 30) +
+  labs(title = "Distribution of GRE Scores",
+       x = "GRE", y = "Count")
+
+# GPA distribution
+ggplot(admissions, aes(x = gpa)) +
+  geom_histogram(bins = 30) +
+  labs(title = "Distribution of GPA",
+       x = "GPA", y = "Count")
+```
+
+### Histograms
+
+GRE scores have a wide range, but most people seem to land somewhere in the middle. There are a few really high and really low scores.
+
+GPAs are mostly pretty high. Almost everyone is between a 3.0 and 4.0, so the dataset doesn’t really include many low-GPA applicants.
+
+```{r rank-admit-plot, fig.width=6, fig.height=4}
+ggplot(admissions, aes(x = rank, fill = admit)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Admission Proportion by Undergraduate Rank",
+       x = "Undergraduate Rank",
+       y = "Proportion")
+```
+
+### Rank vs. Admit
+
+This plot basically shows that the rank of your undergrad school definitely matters. People from Rank 1 and Rank 2 schools have way better chances than Rank 3 or Rank 4.
+
+## Logistic regression modeling
+
+```{r models}
+# Null model (intercept only)
+m0 <- glm(admit ~ 1,
+          data = admissions,
+          family = binomial)
+
+# Model 1: GRE + GPA
+m1 <- glm(admit ~ gre + gpa,
+          data = admissions,
+          family = binomial)
+
+# Model 2: GRE + GPA + rank
+m2 <- glm(admit ~ gre + gpa + rank,
+          data = admissions,
+          family = binomial)
+
+# Compare by AIC
+AIC(m0, m1, m2)
+
+# Likelihood ratio tests (model improvement)
+anova(m0, m1, test = "Chisq")
+anova(m1, m2, test = "Chisq")
+
+# Detailed output for best model
+summary(m2)
+```
+
+### Model Selection Summary
+
+I tested three different logistic regression models to see what actually predicts whether someone gets into grad school:
+
+1. **Null model:** no predictors at all  
+2. **Model 1:** GRE + GPA  
+3. **Model 2:** GRE + GPA + Rank of undergrad school  
+
+First, comparing the null model to the GRE+GPA model, the improvement was super significant (χ² = 19.63, p < 0.001). Basically, GRE and GPA obviously help explain who gets admitted.
+
+Then I compared that model to the one that also includes the rank of the undergrad program. That was also a big improvement (χ² = 21.83, p < 0.001), meaning the rank of the school you went to actually matters, even after controlling for your scores.
+
+Since Model 2 had the lowest AIC and was the best-fitting overall, that’s the model I went with. So yeah — GRE, GPA, and school rank all play a role in admission chances.
+
+## Predictions and model performance
+
+```{r predictions}
+admissions_pred <- admissions |>
+  mutate(
+    p_hat = predict(m2, type = "response"),
+    admit_pred = ifelse(p_hat >= 0.5, "admitted", "rejected"),
+    admit_pred = factor(admit_pred, levels = levels(admit))
+  )
+
+conf_mat <- table(
+  observed = admissions_pred$admit,
+  predicted = admissions_pred$admit_pred
+)
+
+conf_mat
+
+accuracy <- sum(diag(conf_mat)) / sum(conf_mat)
+accuracy
+```
+
+### Prediction Summary
+
+Using the final model (GRE + GPA + Rank), I generated predicted probabilities and turned them into admitted/rejected calls using a 0.5 cutoff. The confusion matrix and accuracy value show that the model gets most of the cases right, but it still messes up a bit on borderline applicants. Honestly, that makes sense because admissions depend on a lot more than just GRE/GPA/stats.
+
+## Conclusion
+
+Overall, the analysis suggests that higher GRE scores, higher GPAs, and attending a higher-ranked undergrad school are all linked to better odds of grad school admission. Rank still matters even after controlling for GRE and GPA, which lines up with how competitive programs usually work. The model does a decent job predicting outcomes, but it’s not perfect, and real decisions probably also depend on other factors that aren’t in this dataset (like letters, personal statements, etc.).
