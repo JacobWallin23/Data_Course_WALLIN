@@ -1,0 +1,276 @@
+---
+title: "Regional Differences in Heart Transplant Waitlist Mortality and 1-Year Outcomes: A Comparison of Western U.S. States and Other Regions Using 2024 OPTN–SRTR Data"
+author: "Jacob Wallin"
+output:
+  html_document:
+    code_folding: none
+    toc: true
+    toc_float: true
+    theme: flatly
+    highlight: tango
+    self_contained: true
+---
+
+# Introduction
+
+Heart transplantation is the definitive therapy for end-stage heart failure, yet access to this treatment varies substantially across the United States. Geographic disparities have been recognized for years, with UNOS Regions 5 and 6—which cover much of the western U.S.—facing unique challenges related to large geographic areas, uneven distribution of transplant programs, and long travel distances for patients. These structural differences may influence both access to transplantation and post-transplant survival, making regional comparisons important for understanding equity in the current allocation system.
+
+This study uses two national datasets to evaluate heart transplant outcomes in 2024. State-level data from the Organ Procurement and Transplantation Network (OPTN) provide counts of heart transplants performed and waitlist deaths occurring in each state. Waitlist mortality is a key indicator of access, reflecting organ availability, center proximity, and waitlist management practices.
+
+Center-level data from the Scientific Registry of Transplant Recipients (SRTR) include observed 1-year mortality events and transplant volumes for every U.S. heart transplant program. From these values, observed 1-year mortality rates were calculated and centers were categorized as being inside or outside UNOS Regions 5 & 6.
+
+Together, these datasets allow two main questions to be tested:
+
+Are waitlist deaths higher in western states (UNOS Regions 5 & 6) compared with other states?
+Do transplant centers in Regions 5 & 6 show different observed 1-year mortality rates compared with centers nationwide?
+
+By combining state-level access indicators with center-level survival outcomes, this analysis provides a focused assessment of how regional factors may shape both patient opportunity and early post-transplant results in the U.S. heart transplant system.
+
+# Methods
+
+For this project, I combined data from two national transplant databases to compare activity and outcomes across different parts of the United States, with a focus on UNOS Regions 5 and 6 in the western states. The overall goal was to see whether these western regions experienced different waitlist death rates or post-transplant outcomes compared to the rest of the country.
+
+**Data Sources**
+
+OPTN state-level data were used to gather information on heart transplant activity and waitlist mortality. These files included yearly counts for each state. I cleaned these files by standardizing column names, removing rows that did not correspond to real states, and selecting only the columns related to 2024 activity. I then combined transplant counts and waitlist death counts for each state into a single dataset.
+
+Center-level outcome data came from the SRTR Program-Specific Report for heart transplants. This file included the number of observed 1-year deaths for each transplant center and the number of patients included in the 1-year analysis. I converted these columns into numeric form and calculated each center’s 1-year mortality rate by dividing the observed number of events by the number of patients. I also extracted the two-letter state abbreviation from each center’s ID to allow region mapping.
+
+**Region Classification**
+
+UNOS Regions 5 and 6 include the western United States. These regions cover Arizona, California, Nevada, New Mexico, and Utah for Region 5, and Alaska, Hawaii, Idaho, Montana, Oregon, and Washington for Region 6. Any state not in these groups was labeled as Other. I applied this same classification to the SRTR center-level data by matching each center’s extracted state abbreviation.
+
+**Modeling and Results**
+
+After cleaning the datasets, I created visualizations to compare the western regions to the rest of the country. These included boxplots showing differences in transplant counts and waitlist deaths, as well as a scatterplot comparing deaths to transplant volume. For the center-level outcomes, I plotted both the distribution of 1-year mortality rates by region and a scatterplot showing how mortality related to center transplant volume.
+
+**Statistical Testing**
+
+To formally test whether the western regions differed from other regions, I used Welch’s two-sample t-test. This test was used in two places. First, I compared 2024 waitlist death counts between Region 5 and 6 states and all other states. Second, I compared 1-year mortality rates between western transplant centers and all other centers. Welch’s test was chosen because the sample sizes and variances between the groups were not equal. All statistical tests used a two-sided α = 0.05.
+
+**Software**
+
+All data cleaning, analysis, and visualization were performed in R using the readxl, dplyr, stringr, janitor, purrr, tibble, and ggplot2 packages. A random seed was set to keep the analysis reproducible.
+
+# Datasets and Setup
+
+**Load Packages and Setup**
+
+####### Exploratory Data Cleaning
+<details>
+<summary><strong>Click to show exploratory and cleaning code</strong></summary>
+
+```{r setup, message=FALSE, warning=FALSE, echo=TRUE}
+library(readxl)
+library(dplyr)
+library(stringr)
+library(janitor)
+library(purrr)
+library(tibble)
+library(ggplot2)
+
+set.seed(3100)
+```
+</details>
+
+This section initializes the analytical environment by loading all packages required for data import, cleaning, transformation, and visualization, including readxl, dplyr, janitor, and ggplot2. A reproducible workflow is ensured by setting a fixed random seed, allowing all sampling and plot-generation procedures to yield consistent results across runs.
+
+**SRTR Center-Level Data**
+
+####### Exploratory Data Cleaning
+<details>
+<summary><strong>Click to show exploratory and cleaning code</strong></summary>
+
+```{r srtr_center, message=FALSE, warning=FALSE, echo=TRUE}
+srtr_raw <- read_excel(
+  "Final_Project_Data/srts_hearttransplant_data.xls",
+  sheet = "TablesC11-C20 FiguresC21-C32"
+) |> clean_names()
+
+srtr_small <- srtr_raw |>
+  filter(org == "HR") |>
+  mutate(
+    center_name   = entire_name,
+    obs_events_1y = as.numeric(psr_ad_obs_c1y),
+    n_tx_1y       = as.numeric(psr_ad_n_c1y),
+    mort_rate_1y  = obs_events_1y / n_tx_1y,
+    state         = substr(ctr_cd, 1, 2)
+  )
+
+nrow(srtr_small)
+head(srtr_small |> select(center_name, state, n_tx_1y, mort_rate_1y))
+summary(srtr_small$mort_rate_1y)
+```
+</details>
+
+This section prepares the SRTR program-level dataset for analysis. Heart transplant programs are isolated by filtering on the organ type indicator. Key outcome variables—observed 1-year mortality events and the number of patients included in the 1-year survival analysis—are converted to numeric form to support further modeling. A center-level 1-year mortality rate is computed as the ratio of observed events to the number of eligible patients. In addition, two-letter state abbreviations are extracted from each center’s identifier, enabling linkage to UNOS regional classifications used later in the analysis.
+
+**OPTN State-Level Transplant and Waitlist Death Data**
+
+####### Exploratory Data Cleaning
+<details>
+<summary><strong>Click to show exploratory and cleaning code</strong></summary>
+
+```{r optn_import_clean, message=FALSE, warning=FALSE, echo=TRUE}
+all_files <- list.files("Final_Project_Data", full.names = TRUE)
+
+# Transplants
+tx_files <- all_files[grep("Heart_transplants_bystate_region", all_files)]
+transplants_state <- map_dfr(tx_files, ~ read_excel(.x) |> clean_names())
+names(transplants_state)[1] <- "state_name"
+
+tx_clean <- transplants_state |>
+  select(state_name, to_date,
+         x2025, x2024, x2023, x2022, x2021, x2020) |>
+  filter(!is.na(state_name), state_name != "All Center States")
+
+# Waitlist deaths
+death_files <- all_files[grep("Deathremovals_candidates_bystate_region", all_files)]
+waitlist_deaths <- map_dfr(death_files, ~ read_excel(.x) |> clean_names())
+names(waitlist_deaths)[1] <- "state_name"
+
+deaths_clean <- waitlist_deaths |>
+  select(state_name, to_date,
+         x2025, x2024, x2023, x2022, x2021, x2020) |>
+  filter(!is.na(state_name), state_name != "All Center States")
+
+# Merge transplants + deaths for 2024
+state_2024 <- tx_clean |>
+  select(state_name, tx_total_to_date = to_date, tx_2024 = x2024) |>
+  left_join(
+    deaths_clean |> select(state_name,
+                           deaths_total_to_date = to_date,
+                           deaths_2024 = x2024),
+    by = "state_name"
+  )
+
+head(state_2024)
+```
+</details>
+
+This code block processes the OPTN state-level transplant and waitlist mortality files by standardizing column names, removing rows that do not correspond to U.S. states, and retaining only the columns representing 2024 activity. Transplant counts and waitlist death counts are then merged by state, producing a consolidated table summarizing both transplant volume and mortality burden for each state in the 2024 reporting period. These cleaned values form the foundation for comparing access and outcomes across different geographic regions.
+
+**UNOS Region Mapping (Regions 5 and 6)**
+
+####### Exploratory Data Cleaning
+<details>
+<summary><strong>Click to show exploratory and cleaning code</strong></summary>
+
+```{r region_map_states, message=FALSE, warning=FALSE, echo=TRUE}
+region_map_states <- tibble(
+  state_name = c(
+    "Arizona","California","Nevada","New Mexico","Utah",
+    "Alaska","Hawaii","Idaho","Montana","Oregon","Washington"
+  ),
+  region = c(rep(5,5), rep(6,6))
+)
+
+state_2024_regions <- state_2024 |>
+  left_join(region_map_states, by = "state_name") |>
+  mutate(
+    region_group = ifelse(region %in% c(5,6), "West (5 & 6)", "Other"),
+    deaths_per_tx_2024 = ifelse(tx_2024 > 0,
+                                deaths_2024 / tx_2024,
+                                NA_real_)
+  )
+
+# SRTR abbreviation-based mapping
+west_states <- c("AZ","CA","NV","NM","UT","AK","HI","ID","MT","OR","WA")
+
+srtr_with_region <- srtr_small |>
+  mutate(
+    region_group = case_when(
+      state %in% west_states ~ "West (5 & 6)",
+      !is.na(state)          ~ "Other",
+      TRUE                   ~ NA_character_
+    )
+  )
+
+table(srtr_with_region$region_group, useNA = "ifany")
+```
+</details>
+
+This section assigns each state to its appropriate UNOS region, with particular emphasis on Regions 5 and 6, which cover the western United States. Region labels are merged into both the OPTN state-level dataset and the SRTR center-level dataset, enabling states and transplant centers to be categorized consistently as either “West (5 & 6)” or “Other.” These classifications make it possible to directly compare transplant activity, waitlist deaths, and observed 1-year mortality rates between the western regions and the rest of the country.
+
+# Modeling and Results
+
+```{r fig1_transplants, message=FALSE, warning=FALSE, echo=TRUE, fig.cap="Figure 1. 2024 Heart Transplants by Region Group. This boxplot compares the distribution of heart transplants performed in 2024 across UNOS Region 5, Region 6, and all other U.S. regions combined. Differences in transplant volume provide context for geographic variation in access to heart transplantation."}
+ggplot(state_2024_regions, aes(x = region_group, y = tx_2024)) +
+  geom_boxplot() +
+  labs(title="Figure 1. 2024 Heart Transplants by Region Group",
+       x="", y="Heart Transplants (2024)")
+```
+
+```{r fig2_waitlist, message=FALSE, warning=FALSE, echo=TRUE, fig.cap="Figure 2. 2024 Heart Transplant Waitlist Deaths by Region Group. This boxplot displays waitlist deaths in 2024 across region groups. Waitlist mortality reflects organ availability, patient proximity to transplant centers, and waitlist-management practices, making it a key measure of regional equity."}
+ggplot(state_2024_regions, aes(x = region_group, y = deaths_2024)) +
+  geom_boxplot() +
+  labs(title="Figure 2. 2024 Heart Transplant Waitlist Deaths by Region Group",
+       x="", y="Waitlist Deaths (2024)")
+```
+
+```{r fig3_scatter, message=FALSE, warning=FALSE, echo=TRUE, fig.cap="Figure 3. Relationship Between Heart Transplant Volume and Waitlist Deaths (2024). This scatterplot shows state-level transplant volume versus waitlist deaths, with points colored by region group. The visualization highlights whether higher-volume states tend to experience lower waitlist mortality, and whether Regions 5 or 6 deviate from national patterns."}
+ggplot(state_2024_regions, aes(x = tx_2024, y = deaths_2024, color = region_group)) +
+  geom_point(size=3) +
+  labs(title="Figure 3. Relationship Between Heart Transplant Volume and Waitlist Deaths (2024)",
+       x="Heart Transplants (2024)", y="Waitlist Deaths (2024)", color="Region Group")
+```
+
+```{r fig4_1yr, message=FALSE, warning=FALSE, echo=TRUE, fig.cap="Figure 4. Center-Level 1-Year Post-Heart-Transplant Mortality by Region Group. This boxplot compares 1-year post-transplant mortality rates across transplant centers in different regions. These center-level outcomes reflect institutional practices, case complexity, and early survival performance."}
+srtr_for_plot <- srtr_with_region |>
+  filter(!is.na(region_group),
+         !is.na(mort_rate_1y),
+         n_tx_1y > 0)
+
+ggplot(srtr_for_plot, aes(x = region_group, y = mort_rate_1y)) +
+  geom_boxplot() +
+  labs(title="Figure 4. Center-Level 1-Year Post-Heart-Transplant Mortality by Region Group",
+       x="", y="1-Year Mortality (fraction)")
+```
+
+```{r fig5_volume_mortality, message=FALSE, warning=FALSE, echo=TRUE, fig.cap="Figure 5. Center Heart Transplant Volume vs. 1-Year Mortality. This scatterplot displays the relationship between each center’s annual heart transplant volume and its 1-year post-transplant mortality rate. Points are colored by region group to evaluate whether western centers differ in the volume–outcome relationship typically observed in transplant medicine."}
+ggplot(srtr_for_plot, aes(x = n_tx_1y, y = mort_rate_1y, color = region_group)) +
+  geom_point() +
+  labs(title="Figure 5. Center Heart Transplant Volume vs. 1-Year Mortality",
+       x="Center Transplant Volume", y="1-Year Mortality", color="Region Group")
+```
+
+# Statistical Tests
+
+```{r state_ttest, message=FALSE, warning=FALSE, echo=TRUE}
+# --- State-level t-test: waitlist deaths ---
+state_for_test <- state_2024_regions |>
+  filter(!is.na(region_group), !is.na(deaths_2024))
+
+t_state <- t.test(deaths_2024 ~ region_group, data = state_for_test)
+t_state
+```
+
+**State-Level Waitlist Mortality Test.**  
+A Welch two-sample t-test was used to compare waitlist deaths between western states (Regions 5 & 6) and all other regions. This test showed **no significant difference** between groups (p = 0.91), indicating that state-level waitlist mortality in the western U.S. is similar to the national average.
+
+```{r center_ttest, message=FALSE, warning=FALSE, echo=TRUE}
+# --- Center-level t-test: 1-year mortality ---
+center_for_test <- srtr_for_plot
+
+t_center <- t.test(mort_rate_1y ~ region_group, data = center_for_test)
+t_center
+```
+
+**Center-Level 1-Year Mortality Test.**  
+A Welch two-sample t-test compared 1-year post–heart-transplant mortality between western centers and those in other regions. The result was **not statistically significant** (p = 0.065), although western centers had slightly lower average 1-year mortality. This suggests a possible trend but not strong enough evidence for a definitive difference.
+
+# Discussion
+
+This analysis offers a focused comparison of heart transplant access and early outcomes in UNOS Regions 5 and 6 versus the rest of the United States. Even though the western region spans large geographic areas and has fewer transplant centers in some states, the data did not show statistically significant differences in waitlist deaths or 1-year post-transplant mortality.
+
+At the state level, 2024 waitlist death counts were similar across regions, with a highly nonsignificant p-value (0.91). This suggests that, in this dataset, the geographic and structural barriers typical of the western U.S. did not translate into higher raw waitlist mortality. However, because these values are unadjusted counts, they do not account for population size, severity of illness, or the number of listed candidates. A rate-based measure could reveal subtler regional disparities that raw counts cannot detect.
+
+Center-level outcomes showed a trend toward lower observed 1-year mortality in western programs (≈5.9%) compared with other centers (≈9.7%), although the difference did not meet conventional significance (p = 0.065). This trend may reflect the presence of several high-volume, academically affiliated transplant centers in the western region, many of which maintain strong early survival outcomes. Still, reliance on observed rather than risk-adjusted outcomes means differences in patient acuity and referral patterns remain unaccounted for. The relationship between transplant volume and survival also appeared weak, consistent with national data showing relatively small short-term survival differences across programs.
+
+# Conclusions
+
+Overall, these results indicate that western U.S. states and transplant centers did not experience worse access or poorer early post-transplant outcomes in 2024 compared with the rest of the country. Both waitlist deaths and observed 1-year mortality were broadly comparable, and western centers demonstrated performance at least on par with national averages.
+
+Several limitations should be recognized. This analysis reflects only a single year of data, uses raw counts rather than true mortality rates, and does not incorporate risk-adjusted SRTR expected outcomes. Important factors such as medical urgency, socioeconomic differences, donor availability, and center-specific listing practices were also not included.
+
+Future work should incorporate multi-year trends, calculate waitlist mortality rates, evaluate donor supply across regions, and use standardized mortality ratios to account for case-mix differences. Even with these limitations, the present findings suggest that access to heart transplantation and early outcomes in UNOS Regions 5 and 6 appear consistent with national norms for 2024.
