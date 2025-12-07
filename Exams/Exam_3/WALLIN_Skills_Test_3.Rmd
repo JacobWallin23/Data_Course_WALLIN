@@ -1,0 +1,147 @@
+---
+title: "Skills Test 3"
+author: "Jacob Wallin"
+date: "2025-12-07"
+output: html_document
+---
+
+## Task 1 – Faculty Salaries Graph
+
+```{r task1-faculty-salaries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+
+# Load, clean, and keep only Tier I, IIA, IIB
+fac_raw <- read_csv("FacultySalaries_1995.csv") |>
+  clean_names() |>
+  filter(tier %in% c("I", "IIA", "IIB"))
+
+# Pivot the three salary columns
+fac_long <- fac_raw |>
+  pivot_longer(
+    cols = c(
+      avg_full_prof_salary,
+      avg_assoc_prof_salary,
+      avg_assist_prof_salary
+    ),
+    names_to = "rank",
+    values_to = "salary"
+  ) |>
+  mutate(
+    rank = case_when(
+      rank == "avg_assist_prof_salary" ~ "Assist",
+      rank == "avg_assoc_prof_salary"  ~ "Assoc",
+      rank == "avg_full_prof_salary"   ~ "Full"
+    ),
+    rank = factor(rank, levels = c("Assist", "Assoc", "Full")),
+    tier = factor(tier, levels = c("I", "IIA", "IIB"))
+  )
+
+# Plot
+ggplot(fac_long, aes(x = rank, y = salary, fill = rank)) +
+  geom_boxplot() +
+  facet_wrap(~ tier, nrow = 1) +
+  scale_fill_manual(
+    values = c(
+      "Assist" = "#F8766D",
+      "Assoc"  = "#7CAE00",
+      "Full"   = "#00B0F6"
+    )
+  ) +
+  labs(
+    x = "Rank",
+    y = "Salary",
+    fill = "Rank"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text  = element_text(size = 14)
+  )
+```
+
+## Task 2 – ANOVA Model
+
+```{r task2-anova, message=FALSE, warning=FALSE}
+# Prepare data for ANOVA
+anova_data <- fac_long |>
+  mutate(
+    state = as.factor(state),
+    tier  = as.factor(tier),
+    rank  = as.factor(rank)
+  )
+
+# ANOVA: Salary explained by State, Tier, Rank (no interactions)
+salary_aov <- aov(salary ~ state + tier + rank, data = anova_data)
+
+# Show ANOVA summary
+summary(salary_aov)
+```
+
+## Task 3 – Load and Tidy Juniper Oils Data
+
+```{r task3-tidy-juniper, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(janitor)
+
+# Load & clean
+jun_raw <- read_csv("Juniper_Oils.csv") |>
+  clean_names()
+
+# List of chemical columns from the exam
+chemicals <- c(
+  "alpha_pinene","para_cymene","alpha_terpineol","cedr_9_ene","alpha_cedrene","beta_cedrene",
+  "cis_thujopsene","alpha_himachalene","beta_chamigrene","cuparene","compound_1","alpha_chamigrene",
+  "widdrol","cedrol","beta_acorenol","alpha_acorenol","gamma_eudesmol","beta_eudesmol",
+  "alpha_eudesmol","cedr_8_en_13_ol","cedr_8_en_15_ol","compound_2","thujopsenal"
+)
+
+# Pivot to tidy long format
+jun_long <- jun_raw |>
+  pivot_longer(
+    cols = all_of(chemicals),
+    names_to = "chemical_id",
+    values_to = "concentration"
+  ) |>
+  mutate(
+    chemical_id = gsub("_", "-", chemical_id)
+  )
+```
+
+## Task 4 – Chemical Concentrations vs. Years Since Burn
+
+```{r task4-juniper-plot, message=FALSE, warning=FALSE}
+ggplot(jun_long, aes(x = years_since_burn, y = concentration)) +
+  geom_smooth(se = TRUE, color = "blue") +   # smooth line + gray ribbon, no points
+  facet_wrap(~ chemical_id, scales = "free_y") +
+  labs(
+    x = "YearsSinceBurn",
+    y = "Concentration"
+  ) +
+  theme_bw() +
+  theme(
+    strip.text = element_text(size = 8)
+  )
+```
+
+## Task 5 – GLM: Chemicals Significantly Affected by Years Since Burn
+
+```{r task5-glm, message=FALSE, warning=FALSE}
+library(broom)
+
+# Fit a separate GLM for each chemical
+glm_results <- jun_long |>
+  nest(data = -chemical_id) |>
+  mutate(
+    model = map(data, ~ glm(concentration ~ years_since_burn, data = .x)),
+    tidied = map(model, tidy)
+  ) |>
+  unnest(tidied)
+
+# Filter only the slope term AND only significant chemicals
+significant_chems <- glm_results |>
+  filter(term == "years_since_burn", p.value < 0.05) |>
+  arrange(p.value)
+
+significant_chems
+```
